@@ -22,7 +22,7 @@ const etherTAPNetmask = "255.255.255.0"
 
 const defaultGateway = "192.0.2.1"
 
-var testData = [48]uint8{
+var testData = []uint8{
 	0x45, 0x00, 0x00, 0x30,
 	0x00, 0x80, 0x00, 0x00,
 	0xff, 0x01, 0xbd, 0x4a,
@@ -38,6 +38,7 @@ var testData = [48]uint8{
 }
 
 var terminate bool = false
+var dev *microps.NetDevice
 
 func main() {
 	ret := true
@@ -75,6 +76,12 @@ func setup() bool {
 		util.Errorf("netInit() failure")
 		return false
 	}
+	var ok bool
+	ok, dev = dummyInit()
+	if !ok {
+		util.Errorf("dummyInit() falure")
+		return false
+	}
 	if !microps.NetRun() {
 		util.Errorf("netRun() failure")
 		return false
@@ -85,6 +92,10 @@ func setup() bool {
 func appMain() bool {
 	util.Debugf("press Ctrl+C to terminate")
 	for !terminate {
+		if !dev.Output(0x0800, testData, nil) {
+			util.Errorf("dev.Output() failure")
+			return false
+		}
 		time.Sleep(1 * time.Second)
 	}
 	util.Debugf("terminate")
@@ -98,4 +109,19 @@ func cleanup() bool {
 		return false
 	}
 	return true
+}
+
+func dummyInit() (bool, *microps.NetDevice) {
+	ok, dev := microps.NetDeviceRegister(&microps.NetDevice{
+		Typ:  microps.NetDeviceTypeDummy,
+		MTU:  128,
+		Hlen: 0, // no header
+		Alen: 0, // no address
+	})
+	if !ok {
+		util.Errorf("NetDeviceRegister() failure")
+		return false, nil
+	}
+	util.Infof("success, dev=%s", dev.Name)
+	return true, dev
 }
