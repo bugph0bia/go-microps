@@ -177,8 +177,8 @@ func NetShutdown() bool {
 		util.Errorf("platformShutdown() failuer")
 		return false
 	}
-	for _, dev := range devices {
-		dev.Close()
+	for i := range devices {
+		devices[i].Close()
 	}
 	util.Infof("success")
 	return true
