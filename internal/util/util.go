@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -44,10 +45,11 @@ func logf(level rune, format string, a ...any) int {
 		fpath = "Unknown"
 		line = 0
 	} else {
-		// プログラムカウンタから パッケージ名.関数名 を取得して、関数名のみ抽出
+		// プログラムカウンタから関数名を取得
 		funcName = runtime.FuncForPC(pc).Name()
-		fns := strings.Split(funcName, ".")
-		funcName = fns[len(fns)-1]
+		// パッケージ名を除去
+		re := regexp.MustCompile(`(.+/)+.+?\.`)
+		funcName = re.ReplaceAllString(funcName, "")
 	}
 
 	return lprintf(os.Stderr, level, filepath.Base(fpath), line, funcName, format, a...)

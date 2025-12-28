@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bugph0bia/go-microps"
+	"github.com/bugph0bia/go-microps/internal/driver"
 	"github.com/bugph0bia/go-microps/internal/util"
 )
 
@@ -77,9 +78,9 @@ func setup() bool {
 		return false
 	}
 	var ok bool
-	ok, dev = dummyInit()
+	ok, dev = driver.LoopbackInit()
 	if !ok {
-		util.Errorf("dummyInit() falure")
+		util.Errorf("LoopbackInit() falure")
 		return false
 	}
 	if !microps.NetRun() {
@@ -109,19 +110,4 @@ func cleanup() bool {
 		return false
 	}
 	return true
-}
-
-func dummyInit() (bool, *microps.NetDevice) {
-	ok, dev := microps.NetDeviceRegister(&microps.NetDevice{
-		Typ:  microps.NetDeviceTypeDummy,
-		MTU:  128,
-		Hlen: 0, // no header
-		Alen: 0, // no address
-	})
-	if !ok {
-		util.Errorf("NetDeviceRegister() failure")
-		return false, nil
-	}
-	util.Infof("success, dev=%s", dev.Name)
-	return true, dev
 }

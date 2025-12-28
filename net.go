@@ -32,6 +32,17 @@ const (
 )
 
 // ----------------------------------------------------------------------------
+// デバイスドライバのインタフェース
+// ----------------------------------------------------------------------------
+
+type NetDeviceOps interface {
+	// Open, Close は任意、不要な場合は return true のみ実装する
+	Open(dev *NetDevice) bool
+	Close(dev *NetDevice) bool
+	Output(dev *NetDevice, typ NetDeviceType, data []uint8, dst any) bool
+}
+
+// ----------------------------------------------------------------------------
 // ネットデバイス構造体
 // ----------------------------------------------------------------------------
 
@@ -46,6 +57,8 @@ type NetDevice struct {
 	Alen      int
 	Addr      [netDeviceAddrLen]uint8
 	Broadcast [netDeviceAddrLen]uint8
+	Ops       NetDeviceOps
+	Priv      any
 }
 
 func (dev *NetDevice) IsUp() bool {
@@ -59,10 +72,15 @@ func (dev *NetDevice) State() string {
 		return "DOWN"
 	}
 }
+
 func (dev *NetDevice) Open() bool {
 	util.Infof("dev=%s", dev.Name)
 	if dev.IsUp() {
 		util.Errorf("already opened, dev=%s", dev.Name)
+		return false
+	}
+	if !dev.Ops.Open(dev) {
+		util.Errorf("failure, dev=%s", dev.Name)
 		return false
 	}
 	dev.Flags |= NetDeviceFlagUp
@@ -73,6 +91,10 @@ func (dev *NetDevice) Close() bool {
 	util.Infof("dev=%s", dev.Name)
 	if !dev.IsUp() {
 		util.Errorf("not opened, dev=%s", dev.Name)
+		return false
+	}
+	if !dev.Ops.Close(dev) {
+		util.Errorf("failure, dev=%s", dev.Name)
 		return false
 	}
 	dev.Flags &^= NetDeviceFlagUp
@@ -88,6 +110,10 @@ func (dev *NetDevice) Output(typ NetDeviceType, data []uint8, dst any) bool {
 	}
 	if dev.MTU < len(data) {
 		util.Errorf("too long, dev=%s, mtu=%d, len=%d", dev.Name, dev.MTU, len(data))
+	}
+	if !dev.Ops.Output(dev, typ, data, dst) {
+		util.Errorf("failure, dev=%s, mtu=%d, len=%d", dev.Name, dev.MTU, len(data))
+		return false
 	}
 	return true
 }
@@ -106,7 +132,7 @@ func (devs NetDevices) Register(dev *NetDevice) bool {
 }
 
 // ----------------------------------------------------------------------------
-// ロジック
+// メインロジック
 // ----------------------------------------------------------------------------
 
 // NOTE: netRun() を呼び出した後にエントリを追加/削除する場合は、
@@ -155,5 +181,11 @@ func NetShutdown() bool {
 		dev.Close()
 	}
 	util.Infof("success")
+	return true
+}
+
+func NetInput(typ NetDeviceType, data []uint8, dev *NetDevice) bool {
+	util.Debugf("dev=%s, type=0x%04x, len=%d", dev.Name, typ, len(data))
+	util.DebugDump(data)
 	return true
 }
