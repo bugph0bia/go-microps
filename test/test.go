@@ -39,7 +39,7 @@ var testData = []uint8{
 }
 
 var terminate bool = false
-var dev *microps.NetDevice
+var dev microps.NetDevice
 
 func main() {
 	ret := true
@@ -77,9 +77,7 @@ func setup() bool {
 		util.Errorf("netInit() failure")
 		return false
 	}
-	var ok bool
-	ok, dev = driver.LoopbackInit()
-	if !ok {
+	if !driver.LoopbackInit() {
 		util.Errorf("LoopbackInit() falure")
 		return false
 	}
@@ -93,7 +91,7 @@ func setup() bool {
 func appMain() bool {
 	util.Debugf("press Ctrl+C to terminate")
 	for !terminate {
-		if !dev.Output(0x0800, testData, nil) {
+		if !microps.NetDeviceOutput(dev, 0x0800, testData, nil) {
 			util.Errorf("dev.Output() failure")
 			return false
 		}
