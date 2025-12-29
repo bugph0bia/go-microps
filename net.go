@@ -104,7 +104,7 @@ var protocols []NetProtocol
 
 // NOTE: NetRun() より後に呼び出すこと
 func NetDeviceRegister(dev NetDevice) bool {
-	dev.Info().Name = fmt.Sprintf("net%d", len(devices)+1)
+	dev.Info().Name = fmt.Sprintf("net%d", len(devices))
 	devices = append(devices, dev)
 	util.Infof("success, dev=%s, type=0x%04x", dev.Info().Name, dev.Info().Typ)
 	return true
