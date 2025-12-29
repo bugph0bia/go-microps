@@ -19,11 +19,10 @@ type LoopbackDevice struct {
 }
 
 func (dev *LoopbackDevice) Info() *microps.NetDeviceInfo {
-	// 実装なし
 	return &dev.NetDeviceInfo
 }
 
-func (devl *LoopbackDevice) Open() bool {
+func (dev *LoopbackDevice) Open() bool {
 	// 実装なし
 	return true
 }
@@ -33,7 +32,7 @@ func (dev *LoopbackDevice) Close() bool {
 	return true
 }
 
-func (dev *LoopbackDevice) Output(typ microps.NetDeviceType, data []uint8, dst any) bool {
+func (dev *LoopbackDevice) Output(typ microps.NetProtocolType, data []uint8, dst any) bool {
 	util.Debugf("dv=%s, type=0x%04x, len=%d", dev.Name, typ, len(data))
 	util.DebugDump(data)
 	return microps.NetInput(typ, data, dev)
@@ -43,7 +42,7 @@ func (dev *LoopbackDevice) Output(typ microps.NetDeviceType, data []uint8, dst a
 // メインロジック
 // ----------------------------------------------------------------------------
 
-func LoopbackInit() bool {
+func LoopbackInit() microps.NetDevice {
 	dev := LoopbackDevice{
 		microps.NetDeviceInfo{
 			Typ:   microps.NetDeviceTypeLoopback,
@@ -55,8 +54,8 @@ func LoopbackInit() bool {
 	}
 	if !microps.NetDeviceRegister(&dev) {
 		util.Errorf("NetDeviceRegister() failure")
-		return false
+		return nil
 	}
 	util.Infof("success, dev=%s", dev.Info().Name)
-	return true
+	return &dev
 }

@@ -30,6 +30,15 @@ const (
 	NetDeviceFlagNeedARP   NetDeviceFlag = 0x0100
 )
 
+// ネットプロトコルの種別
+type NetProtocolType uint16
+
+const (
+	NetProtocolTypeIP   NetProtocolType = 0x0800
+	NetProtocolTypeARP  NetProtocolType = 0x0806
+	NetProtocolTypeIPV6 NetProtocolType = 0x86dd
+)
+
 // ----------------------------------------------------------------------------
 // インタフェース
 // ----------------------------------------------------------------------------
@@ -37,9 +46,16 @@ const (
 // ネットデバイス
 type NetDevice interface {
 	Info() *NetDeviceInfo
-	Open() bool  // 不要な場合は return true のみ実装する
-	Close() bool // 不要な場合は return true のみ実装する
-	Output(typ NetDeviceType, data []uint8, dst any) bool
+	// Open, Close が不要な場合は return true のみ実装すること
+	Open() bool
+	Close() bool
+	Output(typ NetProtocolType, data []uint8, dst any) bool
+}
+
+// ネットプロトコル
+type NetProtocol interface {
+	Info() *NetProtocolInfo
+	InputHandler(data []uint8, dev NetDevice)
 }
 
 // ----------------------------------------------------------------------------
@@ -73,13 +89,18 @@ func (dev NetDeviceInfo) State() string {
 	}
 }
 
+// ネットプロトコル情報
+type NetProtocolInfo struct {
+	Typ NetProtocolType
+}
+
+// NOTE: NetRun() を呼び出した後にエントリを追加/削除する場合はデバイスリストをロックすること
+var devices []NetDevice
+var protocols []NetProtocol
+
 // ----------------------------------------------------------------------------
 // メインロジック
 // ----------------------------------------------------------------------------
-
-// NOTE: NetRun() を呼び出した後にエントリを追加/削除する場合はデバイスリストをロックすること
-
-var devices []NetDevice
 
 // NOTE: NetRun() より後に呼び出すこと
 func NetDeviceRegister(dev NetDevice) bool {
@@ -117,7 +138,7 @@ func NetDeviceClose(dev NetDevice) bool {
 	return true
 }
 
-func NetDeviceOutput(dev NetDevice, typ NetDeviceType, data []uint8, dst any) bool {
+func NetDeviceOutput(dev NetDevice, typ NetProtocolType, data []uint8, dst any) bool {
 	util.Debugf("dev=%s, type=0x%04x, %d", dev.Info().Name, typ, len(data))
 	util.DebugDump(data)
 	if !dev.Info().IsUp() {
@@ -134,16 +155,41 @@ func NetDeviceOutput(dev NetDevice, typ NetDeviceType, data []uint8, dst any) bo
 	return true
 }
 
-func NetInput(typ NetDeviceType, data []uint8, dev NetDevice) bool {
+func NetProtocolRegister(proto NetProtocol) bool {
+	for _, p := range protocols {
+		if proto.Info().Typ == p.Info().Typ {
+			util.Errorf("already registerd, type=0x%04d", p.Info().Typ)
+			return false
+		}
+	}
+	protocols = append(protocols, proto)
+	util.Infof("success, type=0x%04x", proto.Info().Typ)
+	return true
+}
+
+func NetInput(typ NetProtocolType, data []uint8, dev NetDevice) bool {
 	util.Debugf("dev=%s, type=0x%04x, len=%d", dev.Info().Name, typ, len(data))
 	util.DebugDump(data)
+
+	for _, proto := range protocols {
+		if proto.Info().Typ == typ {
+			proto.InputHandler(data, dev)
+			return true
+		}
+	}
+
+	// 未サポートのプロトコルの場合はここを通る
 	return true
 }
 
 func NetInit() bool {
 	util.Infof("initialize...")
 	if !platformInit() {
-		util.Errorf("platformInit() failuer")
+		util.Errorf("platformInit() failure")
+		return false
+	}
+	if !ipInit() {
+		util.Errorf("ipInit() failure")
 		return false
 	}
 	util.Infof("success")
@@ -153,7 +199,7 @@ func NetInit() bool {
 func NetRun() bool {
 	util.Infof("startup...")
 	if !platformRun() {
-		util.Errorf("platformRun() failuer")
+		util.Errorf("platformRun() failure")
 		return false
 	}
 	for i := range devices {
@@ -166,7 +212,7 @@ func NetRun() bool {
 func NetShutdown() bool {
 	util.Infof("shutting down...")
 	if !platformShutdown() {
-		util.Errorf("platformShutdown() failuer")
+		util.Errorf("platformShutdown() failure")
 		return false
 	}
 	for i := range devices {

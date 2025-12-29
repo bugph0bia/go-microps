@@ -77,7 +77,8 @@ func setup() bool {
 		util.Errorf("netInit() failure")
 		return false
 	}
-	if !driver.LoopbackInit() {
+	dev = driver.LoopbackInit()
+	if dev == nil {
 		util.Errorf("LoopbackInit() falure")
 		return false
 	}
@@ -91,7 +92,7 @@ func setup() bool {
 func appMain() bool {
 	util.Debugf("press Ctrl+C to terminate")
 	for !terminate {
-		if !microps.NetDeviceOutput(dev, 0x0800, testData, nil) {
+		if !microps.NetDeviceOutput(dev, microps.NetProtocolTypeIP, testData, nil) {
 			util.Errorf("dev.Output() failure")
 			return false
 		}
