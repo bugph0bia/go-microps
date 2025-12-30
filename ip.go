@@ -25,7 +25,6 @@ const IPTotalSizeMax = math.MaxUint16
 const IPPayloadSizeMax = (IPTotalSizeMax - IPHdrSizeMax)
 
 const IPAddrLen = 4
-const IPAddrStrLen = 15 // "ddd.ddd.ddd.ddd"
 
 const (
 	IPHdrFlagMF uint16 = 0x2000 // more flagments flag
@@ -87,6 +86,18 @@ type IPHdr struct {
 	Dst      IPAddr // Destination Address
 }
 
+// IPインタフェース
+type IPIface struct {
+	NetIfaceInfo
+	unicast   IPAddr
+	netmask   IPAddr
+	broadcast IPAddr
+}
+
+func (iface *IPIface) Info() *NetIfaceInfo {
+	return &iface.NetIfaceInfo
+}
+
 // IPプロトコル
 type IPProtocol struct {
 	NetProtocolInfo
@@ -133,12 +144,69 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 		util.Errorf("fragments does not support")
 		return
 	}
+
+	i := NetDeviceGetIface(dev, NetIfaceFamilyIP)
+	iface, ok := i.(*IPIface)
+	if !ok {
+		// 取得失敗したら何もしない
+		return
+	}
+	if hdr.Dst != iface.unicast {
+		if hdr.Dst != iface.broadcast && hdr.Dst != IPAddrBroadcast {
+			// 別のホストへの通信のため無視
+			return
+		}
+	}
+	util.Debugf("permit, dev=%s, iface=%s", dev.Info().Name, iface.unicast.String())
 	ipPrint(data[:total])
 }
+
+// NOTE: NetRun() を呼び出した後にエントリを追加/削除する場合はデバイスリストをロックすること
+var ifaces []*IPIface
 
 // ----------------------------------------------------------------------------
 // メインロジック
 // ----------------------------------------------------------------------------
+
+func IPIfaceAlloc(unicast string, netmask string) *IPIface {
+	var iface IPIface
+	iface.Info().family = NetIfaceFamilyIP
+
+	var err error
+	iface.unicast, err = ParseIPAddr(unicast)
+	if err != nil {
+		util.Errorf("ParseIPAddr() failure, addr=%s", unicast)
+		return nil
+	}
+	iface.netmask, err = ParseIPAddr(netmask)
+	if err != nil {
+		util.Errorf("ParseIPAddr() failure, addr=%s", netmask)
+		return nil
+	}
+	iface.broadcast = (iface.unicast & iface.netmask) | ^iface.netmask
+	return &iface
+}
+
+// NOTE: NetRun() より前に呼び出すこと
+func IPIfaceRegister(dev NetDevice, iface *IPIface) bool {
+	util.Infof("dev=%s, %s, %s, %s", dev.Info().Name,
+		iface.unicast.String(), iface.netmask.String(), iface.broadcast.String())
+	if !NetDeviceAddIface(dev, iface) {
+		util.Errorf("NetDeviceAddIntrerface() failure")
+		return false
+	}
+	ifaces = append(ifaces, iface)
+	return true
+}
+
+func IPIfaceSelect(addr IPAddr) *IPIface {
+	for _, entry := range ifaces {
+		if entry.unicast == addr {
+			return entry
+		}
+	}
+	return nil
+}
 
 func ipPrint(data []uint8) {
 	// data を IPHdr に変換

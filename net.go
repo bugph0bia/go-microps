@@ -30,6 +30,14 @@ const (
 	NetDeviceFlagNeedARP   NetDeviceFlag = 0x0100
 )
 
+// ネットインタフェースの種別
+type NetIfaceFamily uint16
+
+const (
+	NetIfaceFamilyIP NetIfaceFamily = iota
+	NetIfaceFamilyIPV6
+)
+
 // ネットプロトコルの種別
 type NetProtocolType uint16
 
@@ -52,6 +60,11 @@ type NetDevice interface {
 	Output(typ NetProtocolType, data []uint8, dst any) bool
 }
 
+// ネットインタフェース
+type NetIface interface {
+	Info() *NetIfaceInfo
+}
+
 // ネットプロトコル
 type NetProtocol interface {
 	Info() *NetProtocolInfo
@@ -66,6 +79,7 @@ const netDeviceAddrLen = 16
 
 // ネットデバイス情報
 type NetDeviceInfo struct {
+	ifaces    []NetIface
 	Name      string
 	Typ       NetDeviceType
 	MTU       int
@@ -89,6 +103,12 @@ func (dev NetDeviceInfo) State() string {
 	}
 }
 
+// ネットインタフェース情報
+type NetIfaceInfo struct {
+	dev    NetDevice // 親への参照
+	family NetIfaceFamily
+}
+
 // ネットプロトコル情報
 type NetProtocolInfo struct {
 	Typ NetProtocolType
@@ -102,7 +122,7 @@ var protocols []NetProtocol
 // メインロジック
 // ----------------------------------------------------------------------------
 
-// NOTE: NetRun() より後に呼び出すこと
+// NOTE: NetRun() より前に呼び出すこと
 func NetDeviceRegister(dev NetDevice) bool {
 	dev.Info().Name = fmt.Sprintf("net%d", len(devices))
 	devices = append(devices, dev)
@@ -155,6 +175,31 @@ func NetDeviceOutput(dev NetDevice, typ NetProtocolType, data []uint8, dst any) 
 	return true
 }
 
+// NOTE: NetRun() より前に呼び出すこと
+func NetDeviceAddIface(dev NetDevice, iface NetIface) bool {
+	for _, entry := range dev.Info().ifaces {
+		if entry.Info().family == iface.Info().family {
+			// NOTE: 簡単のために、１つのファミリのインタフェースは１つのみ紐づけ可能とする
+			util.Errorf("already exists, dev=%s, family=%d", dev.Info().Name, entry.Info().family)
+			return false
+		}
+	}
+	dev.Info().ifaces = append(dev.Info().ifaces, iface)
+	iface.Info().dev = dev
+	util.Infof("success, dev=%s", dev.Info().Name)
+	return true
+}
+
+func NetDeviceGetIface(dev NetDevice, family NetIfaceFamily) NetIface {
+	for _, entry := range dev.Info().ifaces {
+		if entry.Info().family == family {
+			return entry
+		}
+	}
+	return nil
+}
+
+// NOTE: NetRun() より前に呼び出すこと
 func NetProtocolRegister(proto NetProtocol) bool {
 	for _, p := range protocols {
 		if proto.Info().Typ == p.Info().Typ {

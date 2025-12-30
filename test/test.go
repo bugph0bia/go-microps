@@ -73,19 +73,33 @@ func main() {
 
 func setup() bool {
 	util.Infof("setup protocol stack...")
+
 	if !microps.NetInit() {
 		util.Errorf("netInit() failure")
 		return false
 	}
+
 	dev = driver.LoopbackInit()
 	if dev == nil {
 		util.Errorf("LoopbackInit() falure")
 		return false
 	}
+
+	iface := microps.IPIfaceAlloc(loopbackIPAddr, loopbackNetmask)
+	if iface == nil {
+		util.Errorf("IPIfaceAlloc() failure")
+		return false
+	}
+	if !microps.IPIfaceRegister(dev, iface) {
+		util.Errorf("IPIfaceRegister() failure")
+		return false
+	}
+
 	if !microps.NetRun() {
 		util.Errorf("netRun() failure")
 		return false
 	}
+
 	return true
 }
 
