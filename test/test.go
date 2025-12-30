@@ -39,7 +39,6 @@ var testData = []uint8{
 }
 
 var terminate bool = false
-var dev microps.NetDevice
 
 func main() {
 	ret := true
@@ -58,7 +57,9 @@ func main() {
 		util.Errorf("setup() failure")
 		os.Exit(-1)
 	}
+
 	ret = appMain()
+
 	if !cleanup() {
 		util.Errorf("cleanup() failure")
 		os.Exit(-1)
@@ -79,7 +80,7 @@ func setup() bool {
 		return false
 	}
 
-	dev = driver.LoopbackInit()
+	dev := driver.LoopbackInit()
 	if dev == nil {
 		util.Errorf("LoopbackInit() falure")
 		return false
@@ -104,20 +105,27 @@ func setup() bool {
 }
 
 func appMain() bool {
+	offset := microps.IPHdrSizeMin
+	src, _ := microps.ParseIPAddr(loopbackIPAddr)
+	dst := src
+
 	util.Debugf("press Ctrl+C to terminate")
+
 	for !terminate {
-		if !microps.NetDeviceOutput(dev, microps.NetProtocolTypeIP, testData, nil) {
+		if _, err := microps.IPOutput(1, testData[offset:], src, dst); err != nil {
 			util.Errorf("dev.Output() failure")
 			return false
 		}
 		time.Sleep(1 * time.Second)
 	}
+
 	util.Debugf("terminate")
 	return true
 }
 
 func cleanup() bool {
 	util.Infof("cleanup protocol stack...")
+
 	if !microps.NetShutdown() {
 		util.Errorf("NetShutdown() failure")
 		return false

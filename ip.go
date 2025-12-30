@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ type IPAddr uint32
 func (ip IPAddr) String() string {
 	addrs := make([]uint8, IPAddrLen)
 	binary.NativeEndian.PutUint32(addrs, uint32(ip))
+
 	return fmt.Sprintf("%d.%d.%d.%d", addrs[0], addrs[1], addrs[2], addrs[3])
 }
 
@@ -98,6 +100,22 @@ func (iface *IPIface) Info() *NetIfaceInfo {
 	return &iface.NetIfaceInfo
 }
 
+// 書籍では ip_output_device()
+func (iface *IPIface) Output(data []uint8, target IPAddr) bool {
+	util.Debugf("dev=%s, len=%d, target=%s", iface.Info().dev.Info().Name, len(data), target.String())
+
+	var hwaddr [netDeviceAddrLen]uint8
+	if iface.Info().dev.Info().Flags&NetDeviceFlagNeedARP > 0 {
+		if (target == iface.broadcast) || (target == IPAddrBroadcast) {
+			hwaddr = iface.dev.Info().Broadcast
+		} else {
+			util.Errorf("ARP does not implement")
+			return false
+		}
+	}
+	return NetDeviceOutput(iface.Info().dev, NetProtocolTypeIP, data, hwaddr)
+}
+
 // IPプロトコル
 type IPProtocol struct {
 	NetProtocolInfo
@@ -107,7 +125,7 @@ func (proto *IPProtocol) Info() *NetProtocolInfo {
 	return &proto.NetProtocolInfo
 }
 
-// 書籍では ip_input
+// 書籍では ip_input()
 func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 	util.Debugf("dev=%s, len=%d", dev.Info().Name, len(data))
 
@@ -119,26 +137,31 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 		util.Errorf(err.Error())
 		return
 	}
+
 	var v uint8 = hdr.VHL >> 4
 	if v != IPVersionIPV4 {
 		util.Errorf("ip version error: v=%d", v)
 		return
 	}
+
 	var hlen uint8 = (hdr.VHL & 0x0f) << 2
 	if len(data) < int(hlen) {
 		util.Errorf("header length error: len=%d < hlen=%d", len(data), hlen)
 		return
 	}
+
 	c, err := util.Cksum16(hdr, uint16(hlen), 0)
 	if c != 0 || err != nil {
 		util.Errorf("checksum error")
 		return
 	}
+
 	total := util.Ntoh16(hdr.Total)
 	if len(data) < int(total) {
 		util.Errorf("total length error: len=%d < total=%d", len(data), total)
 		return
 	}
+
 	offset := util.Ntoh16(hdr.Offset)
 	if offset&IPHdrFlagMF > 0 || offset&IPHdrOffsetMask > 0 {
 		util.Errorf("fragments does not support")
@@ -151,12 +174,14 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 		// 取得失敗したら何もしない
 		return
 	}
+
 	if hdr.Dst != iface.unicast {
 		if hdr.Dst != iface.broadcast && hdr.Dst != IPAddrBroadcast {
 			// 別のホストへの通信のため無視
 			return
 		}
 	}
+
 	util.Debugf("permit, dev=%s, iface=%s", dev.Info().Name, iface.unicast.String())
 	ipPrint(data[:total])
 }
@@ -173,17 +198,21 @@ func IPIfaceAlloc(unicast string, netmask string) *IPIface {
 	iface.Info().family = NetIfaceFamilyIP
 
 	var err error
+
 	iface.unicast, err = ParseIPAddr(unicast)
 	if err != nil {
 		util.Errorf("ParseIPAddr() failure, addr=%s", unicast)
 		return nil
 	}
+
 	iface.netmask, err = ParseIPAddr(netmask)
 	if err != nil {
 		util.Errorf("ParseIPAddr() failure, addr=%s", netmask)
 		return nil
 	}
+
 	iface.broadcast = (iface.unicast & iface.netmask) | ^iface.netmask
+
 	return &iface
 }
 
@@ -191,11 +220,13 @@ func IPIfaceAlloc(unicast string, netmask string) *IPIface {
 func IPIfaceRegister(dev NetDevice, iface *IPIface) bool {
 	util.Infof("dev=%s, %s, %s, %s", dev.Info().Name,
 		iface.unicast.String(), iface.netmask.String(), iface.broadcast.String())
+
 	if !NetDeviceAddIface(dev, iface) {
 		util.Errorf("NetDeviceAddIntrerface() failure")
 		return false
 	}
 	ifaces = append(ifaces, iface)
+
 	return true
 }
 
@@ -217,6 +248,7 @@ func ipPrint(data []uint8) {
 		util.Errorf(err.Error())
 		return
 	}
+
 	var v uint8 = hdr.VHL >> 4
 	var hl uint8 = hdr.VHL & 0x0f
 	var hlen uint8 = hl << 2
@@ -239,15 +271,92 @@ func ipPrint(data []uint8) {
 	fmt.Fprintf(os.Stderr, sb.String())
 }
 
+func ipBuildPacket(protocol uint8, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, error) {
+	var hlen uint16 = IPHdrSizeMin
+	var total uint16 = hlen + uint16(len(data))
+
+	var hdr IPHdr
+	hdr.VHL = uint8((IPVersionIPV4 << 4) | (hlen >> 2))
+	hdr.TOS = 0
+	hdr.Total = util.Hton16(total)
+	hdr.ID = util.Hton16(id)
+	hdr.Offset = util.Hton16(offset)
+	hdr.TTL = 0xff
+	hdr.Protocol = protocol
+	hdr.Sum = 0
+	hdr.Src = src
+	hdr.Dst = dst
+
+	hdr.Sum, _ = util.Cksum16(hdr, hlen, 0) // チェックサム値のバイトオーダー変換は行わない
+
+	buffer := new(bytes.Buffer)
+	err := binary.Write(buffer, binary.NativeEndian, hdr)
+	if err != nil {
+		return nil, err
+	}
+	buf := buffer.Bytes()
+	buf = append(buf, data...)
+
+	ipPrint(buf)
+	return buf, nil
+}
+
+func IPOutput(protocol uint8, data []uint8, src IPAddr, dst IPAddr) (int, error) {
+	util.Debugf("%s => %s, protocol=%d, len=%d", src.String(), dst.String(), protocol, len(data))
+
+	if src == IPAddrAny {
+		err := fmt.Errorf("ip routing does not implement")
+		util.Errorf(err.Error())
+		return 0, err
+	}
+
+	iface := IPIfaceSelect(src)
+	if iface == nil {
+		err := fmt.Errorf("iface not found, src=%s", src.String())
+		util.Errorf(err.Error())
+		return 0, err
+	}
+
+	if ((dst & iface.netmask) != (iface.unicast & iface.netmask)) && (dst != IPAddrBroadcast) {
+		err := fmt.Errorf("not reached, dst=%s", dst.String())
+		util.Errorf(err.Error())
+		return 0, err
+	}
+
+	if iface.Info().dev.Info().MTU < IPHdrSizeMin+len(data) {
+		err := fmt.Errorf("too long, dev=%s, mtu=%d < %d", iface.Info().dev.Info().Name, iface.Info().dev.Info().MTU, (IPHdrSizeMin + len(data)))
+		util.Errorf(err.Error())
+		return 0, err
+	}
+
+	id := rand.N[uint16](math.MaxUint16)
+	buf, err := ipBuildPacket(protocol, data, id, 0, iface.unicast, dst)
+	if err != nil {
+		err := fmt.Errorf("IPBuildPacket() failure")
+		util.Errorf(err.Error())
+		return 0, err
+	}
+
+	if !iface.Output(buf, dst) {
+		err := fmt.Errorf("iface.Output() failure")
+		util.Errorf(err.Error())
+		return 0, err
+	}
+
+	return len(buf), nil
+}
+
 func ipInit() bool {
 	proto := IPProtocol{
 		NetProtocolInfo{
 			Typ: NetProtocolTypeIP,
 		},
 	}
+
 	if !NetProtocolRegister(&proto) {
 		util.Errorf("NetProtocolRegister() failure")
 		return false
 	}
+
 	return true
 }

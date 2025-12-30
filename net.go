@@ -126,41 +126,49 @@ var protocols []NetProtocol
 func NetDeviceRegister(dev NetDevice) bool {
 	dev.Info().Name = fmt.Sprintf("net%d", len(devices))
 	devices = append(devices, dev)
+
 	util.Infof("success, dev=%s, type=0x%04x", dev.Info().Name, dev.Info().Typ)
 	return true
 }
 
 func NetDeviceOpen(dev NetDevice) bool {
 	util.Infof("dev=%s", dev.Info().Name)
+
 	if dev.Info().IsUp() {
 		util.Errorf("already opened, dev=%s", dev.Info().Name)
 		return false
 	}
+
 	if !dev.Open() {
 		util.Errorf("failure, dev=%s", dev.Info().Name)
 		return false
 	}
 	dev.Info().Flags |= NetDeviceFlagUp
+
 	return true
 }
 
 func NetDeviceClose(dev NetDevice) bool {
 	util.Infof("dev=%s", dev.Info().Name)
+
 	if !dev.Info().IsUp() {
 		util.Errorf("not opened, dev=%s", dev.Info().Name)
 		return false
 	}
+
 	if !dev.Close() {
 		util.Errorf("failure, dev=%s", dev.Info().Name)
 		return false
 	}
 	dev.Info().Flags &^= NetDeviceFlagUp
+
 	return true
 }
 
 func NetDeviceOutput(dev NetDevice, typ NetProtocolType, data []uint8, dst any) bool {
 	util.Debugf("dev=%s, type=0x%04x, %d", dev.Info().Name, typ, len(data))
 	util.DebugDump(data)
+
 	if !dev.Info().IsUp() {
 		util.Errorf("not opened, dev=%s", dev.Info().Name)
 		return false
@@ -168,10 +176,12 @@ func NetDeviceOutput(dev NetDevice, typ NetProtocolType, data []uint8, dst any) 
 	if dev.Info().MTU < len(data) {
 		util.Errorf("too long, dev=%s, mtu=%d, len=%d", dev.Info().Name, dev.Info().MTU, len(data))
 	}
+
 	if !dev.Output(typ, data, dst) {
 		util.Errorf("failure, dev=%s, mtu=%d, len=%d", dev.Info().Name, dev.Info().MTU, len(data))
 		return false
 	}
+
 	return true
 }
 
@@ -184,8 +194,10 @@ func NetDeviceAddIface(dev NetDevice, iface NetIface) bool {
 			return false
 		}
 	}
+
 	dev.Info().ifaces = append(dev.Info().ifaces, iface)
 	iface.Info().dev = dev
+
 	util.Infof("success, dev=%s", dev.Info().Name)
 	return true
 }
@@ -208,6 +220,7 @@ func NetProtocolRegister(proto NetProtocol) bool {
 		}
 	}
 	protocols = append(protocols, proto)
+
 	util.Infof("success, type=0x%04x", proto.Info().Typ)
 	return true
 }
@@ -229,40 +242,49 @@ func NetInput(typ NetProtocolType, data []uint8, dev NetDevice) bool {
 
 func NetInit() bool {
 	util.Infof("initialize...")
+
 	if !platformInit() {
 		util.Errorf("platformInit() failure")
 		return false
 	}
+
 	if !ipInit() {
 		util.Errorf("ipInit() failure")
 		return false
 	}
+
 	util.Infof("success")
 	return true
 }
 
 func NetRun() bool {
 	util.Infof("startup...")
+
 	if !platformRun() {
 		util.Errorf("platformRun() failure")
 		return false
 	}
+
 	for i := range devices {
 		NetDeviceOpen(devices[i])
 	}
+
 	util.Infof("success")
 	return true
 }
 
 func NetShutdown() bool {
 	util.Infof("shutting down...")
+
 	if !platformShutdown() {
 		util.Errorf("platformShutdown() failure")
 		return false
 	}
+
 	for i := range devices {
 		NetDeviceClose(devices[i])
 	}
+
 	util.Infof("success")
 	return true
 }

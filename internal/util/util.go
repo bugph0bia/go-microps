@@ -169,6 +169,7 @@ func Cksum16(data any, count uint16, init uint32) (uint16, error) {
 		Errorf(err.Error())
 		return 0, err
 	}
+
 	b := buf.Bytes()
 	// []byte を []uint16 に変換
 	addr := make([]uint16, len(b)/2)
@@ -190,5 +191,6 @@ func Cksum16(data any, count uint16, init uint32) (uint16, error) {
 	for (sum >> 16) > 0 {
 		sum = (sum & 0xffff) + (sum >> 16)
 	}
+
 	return ^uint16(sum), nil
 }
