@@ -253,6 +253,11 @@ func NetInit() bool {
 		return false
 	}
 
+	if !icmpInit() {
+		util.Errorf("icmpInit() failure")
+		return false
+	}
+
 	util.Infof("success")
 	return true
 }

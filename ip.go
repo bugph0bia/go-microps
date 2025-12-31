@@ -38,6 +38,25 @@ const IPHdrOffsetMask uint16 = 0x1fff
 const IPAddrAny IPAddr = 0x00000000       // 0.0.0.0
 const IPAddrBroadcast IPAddr = 0xffffffff // 255.255.255.255
 
+// IP上位プロトコル種別
+type IPUpperProtocolType uint8
+
+const (
+	IPUpperProtocolTypeICMP IPUpperProtocolType = 1
+	IPUpperProtocolTypeTCP  IPUpperProtocolType = 6
+	IPUpperProtocolTypeUDP  IPUpperProtocolType = 17
+)
+
+// ----------------------------------------------------------------------------
+// インタフェース
+// ----------------------------------------------------------------------------
+
+// IP上位プロトコル
+type IPUpperProtocol interface { // 書籍では ip_protocol
+	Info() *IPUpperProtocolInfo
+	InputHandler(ipHdr *IPHdr, data []uint8, ipIface *IPIface)
+}
+
 // ----------------------------------------------------------------------------
 // データ
 // ----------------------------------------------------------------------------
@@ -184,10 +203,22 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 
 	util.Debugf("permit, dev=%s, iface=%s", dev.Info().Name, iface.unicast.String())
 	ipPrint(data[:total])
+
+	for _, upperProtocol := range upperProtocols {
+		if upperProtocol.Info().Protocol == IPUpperProtocolType(hdr.Protocol) {
+			upperProtocol.InputHandler(&hdr, data[hlen:], iface)
+		}
+	}
+}
+
+// IP上位プロトコル情報
+type IPUpperProtocolInfo struct {
+	Protocol IPUpperProtocolType
 }
 
 // NOTE: NetRun() を呼び出した後にエントリを追加/削除する場合はデバイスリストをロックすること
 var ifaces []*IPIface
+var upperProtocols []IPUpperProtocol
 
 // ----------------------------------------------------------------------------
 // メインロジック
@@ -239,6 +270,21 @@ func IPIfaceSelect(addr IPAddr) *IPIface {
 	return nil
 }
 
+// NOTE: NetRun() より前に呼び出すこと
+func IPUpperProtocolRegister(upperProtocol IPUpperProtocol) bool {
+	for _, entry := range upperProtocols {
+		if entry.Info().Protocol == upperProtocol.Info().Protocol {
+			util.Errorf("already exists, protocol=%d", upperProtocol.Info().Protocol)
+			return false
+		}
+	}
+
+	upperProtocols = append(upperProtocols, upperProtocol)
+
+	util.Infof("success, protocol=%d", upperProtocol.Info().Protocol)
+	return true
+}
+
 func ipPrint(data []uint8) {
 	// data を IPHdr に変換
 	var hdr IPHdr
@@ -271,7 +317,7 @@ func ipPrint(data []uint8) {
 	fmt.Fprintf(os.Stderr, sb.String())
 }
 
-func ipBuildPacket(protocol uint8, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, error) {
+func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, error) {
 	var hlen uint16 = IPHdrSizeMin
 	var total uint16 = hlen + uint16(len(data))
 
@@ -282,7 +328,7 @@ func ipBuildPacket(protocol uint8, data []uint8, id uint16, offset uint16, src I
 	hdr.ID = util.Hton16(id)
 	hdr.Offset = util.Hton16(offset)
 	hdr.TTL = 0xff
-	hdr.Protocol = protocol
+	hdr.Protocol = uint8(protocol)
 	hdr.Sum = 0
 	hdr.Src = src
 	hdr.Dst = dst
@@ -301,7 +347,7 @@ func ipBuildPacket(protocol uint8, data []uint8, id uint16, offset uint16, src I
 	return buf, nil
 }
 
-func IPOutput(protocol uint8, data []uint8, src IPAddr, dst IPAddr) (int, error) {
+func IPOutput(protocol IPUpperProtocolType, data []uint8, src IPAddr, dst IPAddr) (int, error) {
 	util.Debugf("%s => %s, protocol=%d, len=%d", src.String(), dst.String(), protocol, len(data))
 
 	if src == IPAddrAny {
