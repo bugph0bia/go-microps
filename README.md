@@ -160,3 +160,9 @@ TCP/IP プロトコルスタック microps を Go 言語で実装する。
 - icmp.go
     - 上で定義する IPUpperProtocol はインタフェース型とし、実体となる構造体は icmp.go で定義する。
       net.go と ip.go の関係と同じ。
+
+### Step08: ICMP：メッセージの入力と検証
+
+- icmp.go
+    - icmp_type_ntoa() は ICMPType.String() メソッドとして実装。
+
