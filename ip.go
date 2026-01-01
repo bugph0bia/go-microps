@@ -71,26 +71,26 @@ func (ip IPAddr) String() string {
 	return fmt.Sprintf("%d.%d.%d.%d", addrs[0], addrs[1], addrs[2], addrs[3])
 }
 
-func ParseIPAddr(str string) (IPAddr, error) {
+func ParseIPAddr(str string) (IPAddr, bool) {
 	nums := strings.Split(str, ".")
 	if len(nums) != IPAddrLen {
-		return 0, fmt.Errorf("IP Address Parse failure")
+		return 0, false
 	}
 
 	addrs := make([]uint8, IPAddrLen)
 	for i, num := range nums {
 		n, err := strconv.Atoi(num)
 		if err != nil {
-			return 0, fmt.Errorf("IP Address Parse failure")
+			return 0, false
 		}
 		if n < 0 || 255 < n {
-			return 0, fmt.Errorf("IP Address Parse failure")
+			return 0, false
 		}
 		addrs[i] = uint8(n)
 	}
 
 	ret := binary.NativeEndian.Uint32(addrs)
-	return IPAddr(ret), nil
+	return IPAddr(ret), true
 }
 
 // IPヘッダ
@@ -169,8 +169,8 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 		return
 	}
 
-	c, err := util.Cksum16(hdr, uint16(hlen), 0)
-	if c != 0 || err != nil {
+	c, ok := util.Cksum16(hdr, uint16(hlen), 0)
+	if !ok || c != 0 {
 		util.Errorf("checksum error")
 		return
 	}
@@ -228,16 +228,16 @@ func IPIfaceAlloc(unicast string, netmask string) *IPIface {
 	var iface IPIface
 	iface.Info().family = NetIfaceFamilyIP
 
-	var err error
+	var ok bool
 
-	iface.unicast, err = ParseIPAddr(unicast)
-	if err != nil {
+	iface.unicast, ok = ParseIPAddr(unicast)
+	if !ok {
 		util.Errorf("ParseIPAddr() failure, addr=%s", unicast)
 		return nil
 	}
 
-	iface.netmask, err = ParseIPAddr(netmask)
-	if err != nil {
+	iface.netmask, ok = ParseIPAddr(netmask)
+	if !ok {
 		util.Errorf("ParseIPAddr() failure, addr=%s", netmask)
 		return nil
 	}
@@ -317,7 +317,7 @@ func ipPrint(data []uint8) {
 	fmt.Fprintf(os.Stderr, sb.String())
 }
 
-func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, error) {
+func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, bool) {
 	var hlen uint16 = IPHdrSizeMin
 	var total uint16 = hlen + uint16(len(data))
 
@@ -338,58 +338,52 @@ func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset
 	buffer := new(bytes.Buffer)
 	err := binary.Write(buffer, binary.NativeEndian, hdr)
 	if err != nil {
-		return nil, err
+		return nil, false
 	}
 	buf := buffer.Bytes()
 	buf = append(buf, data...)
 
 	ipPrint(buf)
-	return buf, nil
+	return buf, true
 }
 
-func IPOutput(protocol IPUpperProtocolType, data []uint8, src IPAddr, dst IPAddr) (int, error) {
+func IPOutput(protocol IPUpperProtocolType, data []uint8, src IPAddr, dst IPAddr) (int, bool) {
 	util.Debugf("%s => %s, protocol=%d, len=%d", src.String(), dst.String(), protocol, len(data))
 
 	if src == IPAddrAny {
-		err := fmt.Errorf("ip routing does not implement")
-		util.Errorf(err.Error())
-		return 0, err
+		util.Errorf("ip routing does not implement")
+		return 0, false
 	}
 
 	iface := IPIfaceSelect(src)
 	if iface == nil {
-		err := fmt.Errorf("iface not found, src=%s", src.String())
-		util.Errorf(err.Error())
-		return 0, err
+		util.Errorf("iface not found, src=%s", src.String())
+		return 0, false
 	}
 
 	if ((dst & iface.netmask) != (iface.unicast & iface.netmask)) && (dst != IPAddrBroadcast) {
-		err := fmt.Errorf("not reached, dst=%s", dst.String())
-		util.Errorf(err.Error())
-		return 0, err
+		util.Errorf("not reached, dst=%s", dst.String())
+		return 0, false
 	}
 
 	if iface.Info().dev.Info().MTU < IPHdrSizeMin+len(data) {
-		err := fmt.Errorf("too long, dev=%s, mtu=%d < %d", iface.Info().dev.Info().Name, iface.Info().dev.Info().MTU, (IPHdrSizeMin + len(data)))
-		util.Errorf(err.Error())
-		return 0, err
+		util.Errorf("too long, dev=%s, mtu=%d < %d", iface.Info().dev.Info().Name, iface.Info().dev.Info().MTU, (IPHdrSizeMin + len(data)))
+		return 0, false
 	}
 
 	id := rand.N[uint16](math.MaxUint16)
-	buf, err := ipBuildPacket(protocol, data, id, 0, iface.unicast, dst)
-	if err != nil {
-		err := fmt.Errorf("IPBuildPacket() failure")
-		util.Errorf(err.Error())
-		return 0, err
+	buf, ok := ipBuildPacket(protocol, data, id, 0, iface.unicast, dst)
+	if !ok {
+		util.Errorf("IPBuildPacket() failure")
+		return 0, false
 	}
 
 	if !iface.Output(buf, dst) {
-		err := fmt.Errorf("iface.Output() failure")
-		util.Errorf(err.Error())
-		return 0, err
+		util.Errorf("iface.Output() failure")
+		return 0, false
 	}
 
-	return len(buf), nil
+	return len(buf), true
 }
 
 func ipInit() bool {

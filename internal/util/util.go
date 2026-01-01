@@ -161,13 +161,13 @@ func Ntoh32(n uint32) uint32 {
 // チェックサム
 // ----------------------------------------------------------------------------
 
-func Cksum16(data any, count uint16, init uint32) (uint16, error) {
+func Cksum16(data any, count uint16, init uint32) (uint16, bool) {
 	// data を []byte に変換
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.NativeEndian, data)
 	if err != nil {
 		Errorf(err.Error())
-		return 0, err
+		return 0, false
 	}
 
 	b := buf.Bytes()
@@ -192,5 +192,5 @@ func Cksum16(data any, count uint16, init uint32) (uint16, error) {
 		sum = (sum & 0xffff) + (sum >> 16)
 	}
 
-	return ^uint16(sum), nil
+	return ^uint16(sum), true
 }

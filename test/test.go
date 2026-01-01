@@ -112,7 +112,7 @@ func appMain() bool {
 	util.Debugf("press Ctrl+C to terminate")
 
 	for !terminate {
-		if _, err := microps.IPOutput(microps.IPUpperProtocolTypeICMP, testData[offset:], src, dst); err != nil {
+		if _, ok := microps.IPOutput(microps.IPUpperProtocolTypeICMP, testData[offset:], src, dst); !ok {
 			util.Errorf("dev.Output() failure")
 			return false
 		}

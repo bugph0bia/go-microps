@@ -74,8 +74,8 @@ func (proto *ICMPProtocol) InputHandler(ipHdr *IPHdr, data []uint8, ipIface *IPI
 		return
 	}
 
-	c, err := util.Cksum16(data, uint16(len(data)), 0)
-	if c != 0 || err != nil {
+	c, ok := util.Cksum16(data, uint16(len(data)), 0)
+	if !ok || c != 0 {
 		util.Errorf("checksum error")
 		return
 	}
