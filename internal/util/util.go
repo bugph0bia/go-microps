@@ -161,7 +161,7 @@ func Ntoh32(n uint32) uint32 {
 // チェックサム
 // ----------------------------------------------------------------------------
 
-func Cksum16(data any, count uint16, init uint32) (uint16, bool) {
+func Cksum16(data any, count int, init uint32) (uint16, bool) {
 	// data を []byte に変換
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.NativeEndian, data)
@@ -193,4 +193,29 @@ func Cksum16(data any, count uint16, init uint32) (uint16, bool) {
 	}
 
 	return ^uint16(sum), true
+}
+
+// ----------------------------------------------------------------------------
+// バイトコード変換
+//
+// NOTE:
+//   バイト列をそのままの形で変換するため
+//   システムのバイトオーダー（NativeEndian）を使用する
+// ----------------------------------------------------------------------------
+
+func ToBytes(v any) ([]uint8, bool) {
+	buffer := new(bytes.Buffer)
+	if err := binary.Write(buffer, binary.NativeEndian, v); err != nil {
+		return nil, false
+	}
+	return buffer.Bytes(), true
+}
+
+// NOTE: v にはポインタ型を渡すこと
+func FromBytes(data []uint8, v any) bool {
+	reader := bytes.NewReader(data)
+	if err := binary.Read(reader, binary.NativeEndian, v); err != nil {
+		return false
+	}
+	return true
 }

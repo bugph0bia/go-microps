@@ -1,8 +1,6 @@
 package microps
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"os"
 	"strings"
@@ -14,6 +12,8 @@ import (
 // ----------------------------------------------------------------------------
 // 定数
 // ----------------------------------------------------------------------------
+
+const ICMPBufSize = IPPayloadSizeMax
 
 // ICMPメッセージ種別
 type ICMPType uint8
@@ -46,6 +46,18 @@ var icmpTypeStrings = map[ICMPType]string{
 	ICMPTypeInfoReply:      "InfomationReply",
 }
 
+// ICMPコード種別
+type ICMPCode uint8
+
+const (
+	ICMPCodeNetUnreach ICMPCode = iota
+	ICMPCodeHostUnreach
+	ICMPCodeProtoUnreach
+	ICMPCodePortUnreach
+	ICMPCodeFragmentNeeded
+	ICMPCodeSourceRouteFailed
+)
+
 func (typ ICMPType) String() string {
 	if str, ok := icmpTypeStrings[typ]; ok {
 		return str
@@ -69,12 +81,13 @@ func (proto *ICMPProtocol) Info() *IPUpperProtocolInfo {
 
 // 書籍では icmp_input()
 func (proto *ICMPProtocol) InputHandler(ipHdr *IPHdr, data []uint8, ipIface *IPIface) {
-	if len(data) < int(unsafe.Sizeof(ICMPHdr{})) {
+	hdrSize := int(unsafe.Sizeof(ICMPHdr{}))
+	if len(data) < hdrSize {
 		util.Errorf("too short")
 		return
 	}
 
-	c, ok := util.Cksum16(data, uint16(len(data)), 0)
+	c, ok := util.Cksum16(data, len(data), 0)
 	if !ok || c != 0 {
 		util.Errorf("checksum error")
 		return
@@ -83,12 +96,25 @@ func (proto *ICMPProtocol) InputHandler(ipHdr *IPHdr, data []uint8, ipIface *IPI
 	util.Debugf("%s => %s, len=%d", ipHdr.Src.String(), ipHdr.Dst.String(), len(data))
 	util.DebugDump(data)
 	icmpPrint(data)
+
+	var hdr ICMPHdr
+	if !util.FromBytes(data, &hdr) {
+		util.Errorf("FromBytes() failure")
+		return
+	}
+	switch hdr.Typ {
+	case ICMPTypeEcho:
+		// 受信したインタフェースのアドレスを含めた応答
+		ICMPOutput(ICMPTypeEchoReply, hdr.Code, hdr.Dep, data[hdrSize:], ipIface.unicast, ipHdr.Src)
+	default:
+		// 無視
+	}
 }
 
 // ICMPヘッダ（共通フィールド）
 type ICMPCommon struct {
 	Typ  ICMPType
-	Code uint8
+	Code ICMPCode
 	Sum  uint16
 }
 
@@ -118,17 +144,15 @@ type ICMPDestUnreach struct {
 func icmpPrint(data []uint8) {
 	// data を IPHdr に変換
 	var hdr ICMPHdr
-	reader := bytes.NewReader(data)
-	err := binary.Read(reader, binary.NativeEndian, &hdr)
-	if err != nil {
-		util.Errorf(err.Error())
+	if !util.FromBytes(data, &hdr) {
+		util.Errorf("FromBytes() failure")
 		return
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "        type; %d (%s)\n", hdr.Typ, hdr.Typ.String())
-	fmt.Fprintf(&sb, "        code; %d\n", hdr.Code)
-	fmt.Fprintf(&sb, "         sum: 0x%04x\n", util.Ntoh16(hdr.Sum))
+	fmt.Fprintf(&sb, "       type: %d (%s)\n", hdr.Typ, hdr.Typ.String())
+	fmt.Fprintf(&sb, "       code; %d\n", hdr.Code)
+	fmt.Fprintf(&sb, "        sum: 0x%04x\n", util.Ntoh16(hdr.Sum))
 
 	switch hdr.Typ {
 	case ICMPTypeEchoReply:
@@ -136,31 +160,67 @@ func icmpPrint(data []uint8) {
 
 	case ICMPTypeEcho:
 		var echo ICMPEcho
-		reader := bytes.NewReader(data)
-		err := binary.Read(reader, binary.NativeEndian, &echo)
-		if err != nil {
-			util.Errorf(err.Error())
+		if !util.FromBytes(data, &echo) {
+			util.Errorf("FromBytes() falure")
 			return
 		}
-		fmt.Fprintf(&sb, "          id: %d\n", util.Ntoh16(echo.ID))
-		fmt.Fprintf(&sb, "         seq: %d\n", util.Ntoh16(echo.Seq))
+		fmt.Fprintf(&sb, "         id: %d\n", util.Ntoh16(echo.ID))
+		fmt.Fprintf(&sb, "        seq: %d\n", util.Ntoh16(echo.Seq))
 
 	case ICMPTypeDestUnreach:
 		var unreach ICMPDestUnreach
-		reader := bytes.NewReader(data)
-		err := binary.Read(reader, binary.NativeEndian, &unreach)
-		if err != nil {
-			util.Errorf(err.Error())
+		if !util.FromBytes(data, &unreach) {
+			util.Errorf("FromBytes() falure")
 			return
 		}
-		fmt.Fprintf(&sb, "      unused: %d\n", util.Ntoh16(uint16(unreach.Unused)))
+		fmt.Fprintf(&sb, "     unused: %d\n", util.Ntoh16(uint16(unreach.Unused)))
 
 	default:
-		fmt.Fprintf(&sb, "         dep: 0x%08x\n", util.Ntoh16(uint16(hdr.Dep)))
+		fmt.Fprintf(&sb, "        dep: 0x%08x\n", util.Ntoh16(uint16(hdr.Dep)))
 	}
 
 	util.DebugDump(data)
 	fmt.Fprintf(os.Stderr, sb.String())
+}
+
+func ICMPOutput(typ ICMPType, code ICMPCode, val uint32, data []uint8, src IPAddr, dst IPAddr) bool {
+	hdr := ICMPHdr{
+		ICMPCommon: ICMPCommon{
+			Typ:  typ,
+			Code: code,
+			Sum:  0,
+		},
+		Dep: val,
+	}
+
+	if ICMPBufSize < int(unsafe.Sizeof(hdr))+len(data) {
+		util.Errorf("too large")
+		return false
+	}
+
+	// データ構築→チェックサム計算して格納→データ再構築
+	var buf []uint8
+	var ok bool
+	buf, ok = util.ToBytes(hdr)
+	if !ok {
+		return false
+	}
+	buf = append(buf, data...)
+	hdr.Sum, ok = util.Cksum16(buf, len(buf), 0)
+	if !ok {
+		return false
+	}
+	buf, ok = util.ToBytes(hdr)
+	if !ok {
+		return false
+	}
+	buf = append(buf, data...)
+
+	util.Debugf("%s => %s, len=%d", src.String(), dst.String(), len(buf))
+	icmpPrint(buf)
+
+	_, ok = IPOutput(IPUpperProtocolTypeICMP, buf, src, dst)
+	return ok
 }
 
 func icmpInit() bool {

@@ -1,7 +1,6 @@
 package microps
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -150,10 +149,8 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 
 	// data を IPHdr に変換
 	var hdr IPHdr
-	reader := bytes.NewReader(data)
-	err := binary.Read(reader, binary.NativeEndian, &hdr)
-	if err != nil {
-		util.Errorf(err.Error())
+	if !util.FromBytes(data, &hdr) {
+		util.Errorf("FromBytes() failure")
 		return
 	}
 
@@ -169,7 +166,7 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 		return
 	}
 
-	c, ok := util.Cksum16(hdr, uint16(hlen), 0)
+	c, ok := util.Cksum16(hdr, int(hlen), 0)
 	if !ok || c != 0 {
 		util.Errorf("checksum error")
 		return
@@ -207,7 +204,15 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 	for _, upperProtocol := range upperProtocols {
 		if upperProtocol.Info().Protocol == IPUpperProtocolType(hdr.Protocol) {
 			upperProtocol.InputHandler(&hdr, data[hlen:], iface)
+			return
 		}
+	}
+
+	// サポート外のプロトコル
+	if int(hlen+8) <= int(total) {
+		// ICMPメッセージの応答として送信されるべきではない
+		// ただし、ICMPは登録済みでここに到達することはない
+		ICMPOutput(ICMPTypeDestUnreach, ICMPCodeProtoUnreach, 0, data[:hlen+8], iface.unicast, hdr.Src)
 	}
 }
 
@@ -288,10 +293,8 @@ func IPUpperProtocolRegister(upperProtocol IPUpperProtocol) bool {
 func ipPrint(data []uint8) {
 	// data を IPHdr に変換
 	var hdr IPHdr
-	reader := bytes.NewReader(data)
-	err := binary.Read(reader, binary.NativeEndian, &hdr)
-	if err != nil {
-		util.Errorf(err.Error())
+	if !util.FromBytes(data, &hdr) {
+		util.Errorf("FromBytes() failure")
 		return
 	}
 
@@ -333,14 +336,13 @@ func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset
 	hdr.Src = src
 	hdr.Dst = dst
 
-	hdr.Sum, _ = util.Cksum16(hdr, hlen, 0) // チェックサム値のバイトオーダー変換は行わない
+	hdr.Sum, _ = util.Cksum16(hdr, int(hlen), 0) // チェックサム値のバイトオーダー変換は行わない
 
-	buffer := new(bytes.Buffer)
-	err := binary.Write(buffer, binary.NativeEndian, hdr)
-	if err != nil {
+	buf, ok := util.ToBytes(hdr)
+	if !ok {
+		util.Errorf("ToBytes() failure")
 		return nil, false
 	}
-	buf := buffer.Bytes()
 	buf = append(buf, data...)
 
 	ipPrint(buf)

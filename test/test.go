@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"os"
 	"os/signal"
 	"time"
@@ -105,15 +106,19 @@ func setup() bool {
 }
 
 func appMain() bool {
-	offset := microps.IPHdrSizeMin
 	src, _ := microps.ParseIPAddr(loopbackIPAddr)
 	dst := src
+	var id uint32 = uint32(os.Getpid() % math.MaxUint16)
+	var seq uint32 = 0
+	data := []uint8("TEST")
 
 	util.Debugf("press Ctrl+C to terminate")
 
 	for !terminate {
-		if _, ok := microps.IPOutput(microps.IPUpperProtocolTypeICMP, testData[offset:], src, dst); !ok {
-			util.Errorf("dev.Output() failure")
+		seq++
+		var val uint32 = util.Hton32(id<<16 | seq)
+		if ok := microps.ICMPOutput(microps.ICMPTypeEcho, 0, val, data, src, dst); !ok {
+			util.Errorf("ICMPOutput() failure")
 			return false
 		}
 		time.Sleep(1 * time.Second)
