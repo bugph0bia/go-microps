@@ -1,3 +1,5 @@
+//go:build !TAP
+
 package main
 
 import (

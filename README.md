@@ -176,3 +176,20 @@ TCP/IP プロトコルスタック microps を Go 言語で実装する。
 - util.go
     - ポインタを使わないようにすることで、[]uint8 と任意の型（ICMPHdr など）の相互変換を多用するため、ユーティリティ関数に切り出す。
         - ToBytes() と FromBytes() を作成
+
+### Step10: Ethernet：フレームの入力
+
+- Makefile
+    - TAPデバイスの作成処理を追加。
+    - ついでにコードを少し整理。
+- ether.go
+    - このレイヤーは driver パッケージにすべきとも思ったが、書籍に合わせて microps パッケージに作成しておく。
+    - Ethernetアドレスと文字列の相互変換の関数は、Go の慣習に従って以下のように実装する。
+        - ether_addr_pton() : ParseEtherAddr() という通常の関数とする。
+        - ether_addr_ntop() : EtherAddr.String() というメソッドとする。
+    - 書籍の ether_print() で debugdump() を使わずに hexdump() を直接呼び出しているのは何故かわからない。DebugDump() を呼び出すことにする。
+- test.go, tap.go
+    - 書籍ではテストコード test.c と tap.c の両方に main 関数を用意して、一度の make で複数の実行バイナリをビルドしている。
+      Go で同じことはできないため、ビルドタグ TAP を指定したら TAP テスト用の実行バイナリをビルドするように設定する。
+    - `TAGS="HEXDUMP,TAP" make` のようにビルドすることで TAP のテスト用の実行バイナリを作成できる。実行バイナリの名称は常に test であることに注意。
+    - テストコードの出力が若干書籍と異なる（サンプルコードでは ～ via tap0 のように出力されない）ので、その点は修正を入れた。
