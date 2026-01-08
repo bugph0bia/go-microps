@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/bugph0bia/go-microps"
-	"github.com/bugph0bia/go-microps/internal/driver"
 	"github.com/bugph0bia/go-microps/internal/util"
 )
 
@@ -83,7 +82,7 @@ func setup() bool {
 		return false
 	}
 
-	dev := driver.LoopbackInit()
+	dev := microps.LoopbackInit()
 	if dev == nil {
 		util.Errorf("LoopbackInit() falure")
 		return false

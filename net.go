@@ -105,8 +105,8 @@ func (dev NetDeviceInfo) State() string {
 
 // ネットインタフェース情報
 type NetIfaceInfo struct {
-	dev    NetDevice // 親への参照
-	family NetIfaceFamily
+	Dev    NetDevice // 親への参照
+	Family NetIfaceFamily
 }
 
 // ネットプロトコル情報
@@ -115,8 +115,8 @@ type NetProtocolInfo struct {
 }
 
 // NOTE: NetRun() を呼び出した後にエントリを追加/削除する場合はデバイスリストをロックすること
-var devices []NetDevice
-var protocols []NetProtocol
+var Devices []NetDevice
+var Protocols []NetProtocol
 
 // ----------------------------------------------------------------------------
 // メインロジック
@@ -124,8 +124,8 @@ var protocols []NetProtocol
 
 // NOTE: NetRun() より前に呼び出すこと
 func NetDeviceRegister(dev NetDevice) bool {
-	dev.Info().Name = fmt.Sprintf("net%d", len(devices))
-	devices = append(devices, dev)
+	dev.Info().Name = fmt.Sprintf("net%d", len(Devices))
+	Devices = append(Devices, dev)
 
 	util.Infof("success, dev=%s, type=0x%04x", dev.Info().Name, dev.Info().Typ)
 	return true
@@ -188,15 +188,15 @@ func NetDeviceOutput(dev NetDevice, typ NetProtocolType, data []uint8, dst any) 
 // NOTE: NetRun() より前に呼び出すこと
 func NetDeviceAddIface(dev NetDevice, iface NetIface) bool {
 	for _, entry := range dev.Info().ifaces {
-		if entry.Info().family == iface.Info().family {
+		if entry.Info().Family == iface.Info().Family {
 			// NOTE: 簡単のために、１つのファミリのインタフェースは１つのみ紐づけ可能とする
-			util.Errorf("already exists, dev=%s, family=%d", dev.Info().Name, entry.Info().family)
+			util.Errorf("already exists, dev=%s, family=%d", dev.Info().Name, entry.Info().Family)
 			return false
 		}
 	}
 
 	dev.Info().ifaces = append(dev.Info().ifaces, iface)
-	iface.Info().dev = dev
+	iface.Info().Dev = dev
 
 	util.Infof("success, dev=%s", dev.Info().Name)
 	return true
@@ -204,7 +204,7 @@ func NetDeviceAddIface(dev NetDevice, iface NetIface) bool {
 
 func NetDeviceGetIface(dev NetDevice, family NetIfaceFamily) NetIface {
 	for _, entry := range dev.Info().ifaces {
-		if entry.Info().family == family {
+		if entry.Info().Family == family {
 			return entry
 		}
 	}
@@ -213,13 +213,13 @@ func NetDeviceGetIface(dev NetDevice, family NetIfaceFamily) NetIface {
 
 // NOTE: NetRun() より前に呼び出すこと
 func NetProtocolRegister(proto NetProtocol) bool {
-	for _, p := range protocols {
+	for _, p := range Protocols {
 		if proto.Info().Typ == p.Info().Typ {
 			util.Errorf("already registerd, type=0x%04d", p.Info().Typ)
 			return false
 		}
 	}
-	protocols = append(protocols, proto)
+	Protocols = append(Protocols, proto)
 
 	util.Infof("success, type=0x%04x", proto.Info().Typ)
 	return true
@@ -229,7 +229,7 @@ func NetInput(typ NetProtocolType, data []uint8, dev NetDevice) bool {
 	util.Debugf("dev=%s, type=0x%04x, len=%d", dev.Info().Name, typ, len(data))
 	util.DebugDump(data)
 
-	for _, proto := range protocols {
+	for _, proto := range Protocols {
 		if proto.Info().Typ == typ {
 			proto.InputHandler(data, dev)
 			return true
@@ -243,17 +243,17 @@ func NetInput(typ NetProtocolType, data []uint8, dev NetDevice) bool {
 func NetInit() bool {
 	util.Infof("initialize...")
 
-	if !platformInit() {
+	if !PlatformInit() {
 		util.Errorf("platformInit() failure")
 		return false
 	}
 
-	if !ipInit() {
+	if !IPInit() {
 		util.Errorf("ipInit() failure")
 		return false
 	}
 
-	if !icmpInit() {
+	if !ICMPInit() {
 		util.Errorf("icmpInit() failure")
 		return false
 	}
@@ -265,13 +265,13 @@ func NetInit() bool {
 func NetRun() bool {
 	util.Infof("startup...")
 
-	if !platformRun() {
+	if !PlatformRun() {
 		util.Errorf("platformRun() failure")
 		return false
 	}
 
-	for i := range devices {
-		NetDeviceOpen(devices[i])
+	for i := range Devices {
+		NetDeviceOpen(Devices[i])
 	}
 
 	util.Infof("success")
@@ -281,13 +281,13 @@ func NetRun() bool {
 func NetShutdown() bool {
 	util.Infof("shutting down...")
 
-	if !platformShutdown() {
+	if !PlatformShutdown() {
 		util.Errorf("platformShutdown() failure")
 		return false
 	}
 
-	for i := range devices {
-		NetDeviceClose(devices[i])
+	for i := range Devices {
+		NetDeviceClose(Devices[i])
 	}
 
 	util.Infof("success")

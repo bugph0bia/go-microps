@@ -95,7 +95,7 @@ func (proto *ICMPProtocol) InputHandler(ipHdr *IPHdr, data []uint8, ipIface *IPI
 
 	util.Debugf("%s => %s, len=%d", ipHdr.Src.String(), ipHdr.Dst.String(), len(data))
 	util.DebugDump(data)
-	icmpPrint(data)
+	ICMPPrint(data)
 
 	var hdr ICMPHdr
 	if !util.FromBytes(data, &hdr) {
@@ -141,7 +141,7 @@ type ICMPDestUnreach struct {
 // メインロジック
 // ----------------------------------------------------------------------------
 
-func icmpPrint(data []uint8) {
+func ICMPPrint(data []uint8) {
 	// data を IPHdr に変換
 	var hdr ICMPHdr
 	if !util.FromBytes(data, &hdr) {
@@ -217,13 +217,13 @@ func ICMPOutput(typ ICMPType, code ICMPCode, val uint32, data []uint8, src IPAdd
 	buf = append(buf, data...)
 
 	util.Debugf("%s => %s, len=%d", src.String(), dst.String(), len(buf))
-	icmpPrint(buf)
+	ICMPPrint(buf)
 
 	_, ok = IPOutput(IPUpperProtocolTypeICMP, buf, src, dst)
 	return ok
 }
 
-func icmpInit() bool {
+func ICMPInit() bool {
 	if !IPUpperProtocolRegister(&ICMPProtocol{
 		IPUpperProtocolInfo{
 			Protocol: IPUpperProtocolTypeICMP,

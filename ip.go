@@ -120,18 +120,18 @@ func (iface *IPIface) Info() *NetIfaceInfo {
 
 // 書籍では ip_output_device()
 func (iface *IPIface) Output(data []uint8, target IPAddr) bool {
-	util.Debugf("dev=%s, len=%d, target=%s", iface.Info().dev.Info().Name, len(data), target.String())
+	util.Debugf("dev=%s, len=%d, target=%s", iface.Info().Dev.Info().Name, len(data), target.String())
 
 	var hwaddr [netDeviceAddrLen]uint8
-	if iface.Info().dev.Info().Flags&NetDeviceFlagNeedARP > 0 {
+	if iface.Info().Dev.Info().Flags&NetDeviceFlagNeedARP > 0 {
 		if (target == iface.broadcast) || (target == IPAddrBroadcast) {
-			hwaddr = iface.dev.Info().Broadcast
+			hwaddr = iface.Dev.Info().Broadcast
 		} else {
 			util.Errorf("ARP does not implement")
 			return false
 		}
 	}
-	return NetDeviceOutput(iface.Info().dev, NetProtocolTypeIP, data, hwaddr)
+	return NetDeviceOutput(iface.Info().Dev, NetProtocolTypeIP, data, hwaddr)
 }
 
 // IPプロトコル
@@ -199,7 +199,7 @@ func (proto *IPProtocol) InputHandler(data []uint8, dev NetDevice) {
 	}
 
 	util.Debugf("permit, dev=%s, iface=%s", dev.Info().Name, iface.unicast.String())
-	ipPrint(data[:total])
+	IPPrint(data[:total])
 
 	for _, upperProtocol := range upperProtocols {
 		if upperProtocol.Info().Protocol == IPUpperProtocolType(hdr.Protocol) {
@@ -231,7 +231,7 @@ var upperProtocols []IPUpperProtocol
 
 func IPIfaceAlloc(unicast string, netmask string) *IPIface {
 	var iface IPIface
-	iface.Info().family = NetIfaceFamilyIP
+	iface.Info().Family = NetIfaceFamilyIP
 
 	var ok bool
 
@@ -290,7 +290,7 @@ func IPUpperProtocolRegister(upperProtocol IPUpperProtocol) bool {
 	return true
 }
 
-func ipPrint(data []uint8) {
+func IPPrint(data []uint8) {
 	// data を IPHdr に変換
 	var hdr IPHdr
 	if !util.FromBytes(data, &hdr) {
@@ -320,7 +320,7 @@ func ipPrint(data []uint8) {
 	fmt.Fprintf(os.Stderr, sb.String())
 }
 
-func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, bool) {
+func IPBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset uint16, src IPAddr, dst IPAddr) ([]uint8, bool) {
 	var hlen uint16 = IPHdrSizeMin
 	var total uint16 = hlen + uint16(len(data))
 
@@ -345,7 +345,7 @@ func ipBuildPacket(protocol IPUpperProtocolType, data []uint8, id uint16, offset
 	}
 	buf = append(buf, data...)
 
-	ipPrint(buf)
+	IPPrint(buf)
 	return buf, true
 }
 
@@ -368,13 +368,13 @@ func IPOutput(protocol IPUpperProtocolType, data []uint8, src IPAddr, dst IPAddr
 		return 0, false
 	}
 
-	if iface.Info().dev.Info().MTU < IPHdrSizeMin+len(data) {
-		util.Errorf("too long, dev=%s, mtu=%d < %d", iface.Info().dev.Info().Name, iface.Info().dev.Info().MTU, (IPHdrSizeMin + len(data)))
+	if iface.Info().Dev.Info().MTU < IPHdrSizeMin+len(data) {
+		util.Errorf("too long, dev=%s, mtu=%d < %d", iface.Info().Dev.Info().Name, iface.Info().Dev.Info().MTU, (IPHdrSizeMin + len(data)))
 		return 0, false
 	}
 
 	id := rand.N[uint16](math.MaxUint16)
-	buf, ok := ipBuildPacket(protocol, data, id, 0, iface.unicast, dst)
+	buf, ok := IPBuildPacket(protocol, data, id, 0, iface.unicast, dst)
 	if !ok {
 		util.Errorf("IPBuildPacket() failure")
 		return 0, false
@@ -388,7 +388,7 @@ func IPOutput(protocol IPUpperProtocolType, data []uint8, src IPAddr, dst IPAddr
 	return len(buf), true
 }
 
-func ipInit() bool {
+func IPInit() bool {
 	proto := IPProtocol{
 		NetProtocolInfo{
 			Typ: NetProtocolTypeIP,

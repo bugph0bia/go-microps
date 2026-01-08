@@ -1,13 +1,13 @@
 package microps
 
-func platformInit() bool {
+func PlatformInit() bool {
 	return true
 }
 
-func platformRun() bool {
+func PlatformRun() bool {
 	return true
 }
 
-func platformShutdown() bool {
+func PlatformShutdown() bool {
 	return true
 }
